@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: Serverless React + Python API with Cognito, DynamoDB, S3
+
+Parameters:
+  AppBucketName:
+    Type: String
+    Default: my-app-frontend-bucket
+  BlobBucketName:
+    Type: String
+    Default: my-app-blob-bucket
+  DynamoTableName:
+    Type: String
+    Default: my-app-tags
+  UserPoolName:
+    Type: String
+    Default: my-app-users
+
+Resources:
+  ReactFrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref AppBucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  BlobStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BlobBucketName
+
+  TagsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoTableName
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: tag
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: tag
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      AutoVerifiedAttributes:
+        - email
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: web-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  MainLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: my-app-backend
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      CodeUri: ../backend/
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          DYNAMO_TABLE: !Ref DynamoTableName
+          BLOB_BUCKET: !Ref BlobBucketName
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoTableName
+        - S3CrudPolicy:
+            BucketName: !Ref BlobBucketName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId: !Ref ApiGatewayApi
+      Layers: []
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  FrontendS3Url:
+    Description: "Frontend S3 Bucket Website URL"
+    Value: !GetAtt ReactFrontendBucket.WebsiteURL
+  CognitoUserPoolId:
+    Description: "Cognito User Pool Id"
+    Value: !Ref UserPool
+  DynamoTableName:
+    Description: "DynamoDB Table Name"
+    Value: !Ref DynamoTableName
+  BlobBucketName:
+    Description: "Blob S3 Bucket Name"
+    Value: !Ref BlobBucketName

@@ -1,0 +1,23 @@
+# Node
+node_modules/
+build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# SAM build
+.aws-sam/
+
+# React
+frontend/build/
+frontend/node_modules/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
